@@ -7,6 +7,12 @@ import { DatabaseModule } from './database/database.module';
 import { SecurityModule } from './security/security.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { RolesModule } from './roles/roles.module';
+import { PermissionsModule } from './permissions/permissions.module';
+import { SessionsModule } from './sessions/sessions.module';
+import { AdminModule } from './admin/admin.module';
+import { AuditLogsController } from './audit-logs/audit-logs.controller';
 import configuration from './config/configuration';
 
 @Module({
@@ -25,8 +31,13 @@ import configuration from './config/configuration';
     SecurityModule,
     AuditModule,
     AuthModule,
+    UsersModule,
+    RolesModule,
+    PermissionsModule,
+    SessionsModule,
+    AdminModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, AuditLogsController],
   providers: [AppService],
 })
 export class AppModule {}

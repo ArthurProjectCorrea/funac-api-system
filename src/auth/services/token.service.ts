@@ -238,6 +238,50 @@ export class TokenService {
   }
 
   /**
+   * Cria um token genérico
+   */
+  async createToken(
+    userId: string,
+    type: TokenType,
+    data: Record<string, any> = {},
+  ): Promise<string> {
+    const token = this.generateSecureToken();
+    const tokenHash = this.hashToken(token);
+
+    const expiresAt = new Date();
+
+    switch (type) {
+      case TokenType.EMAIL_VERIFICATION:
+        expiresAt.setMinutes(
+          expiresAt.getMinutes() + this.emailVerifyExpiration,
+        );
+        break;
+      case TokenType.PASSWORD_RESET:
+        expiresAt.setMinutes(
+          expiresAt.getMinutes() + this.passwordResetExpiration,
+        );
+        break;
+      case TokenType.INVITATION:
+        expiresAt.setDate(expiresAt.getDate() + this.invitationExpiration);
+        break;
+      default:
+        expiresAt.setHours(expiresAt.getHours() + 1); // 1 hora por padrão
+    }
+
+    await this.prisma.token.create({
+      data: {
+        userId,
+        type,
+        tokenHash,
+        expiresAt,
+        data,
+      },
+    });
+
+    return token;
+  }
+
+  /**
    * Gera token criptograficamente seguro
    */
   private generateSecureToken(): string {

@@ -9,6 +9,7 @@ import {
   Get,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { Request as ExpressRequest } from 'express';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AuthService } from '../services/auth.service';
@@ -34,6 +35,7 @@ interface AuthenticatedRequest extends ExpressRequest {
   };
 }
 
+@ApiTags('Auth')
 @Controller('auth')
 @UseGuards(ThrottlerGuard)
 export class AuthController {
@@ -45,6 +47,45 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @UseGuards(LocalAuthGuard)
+  @ApiOperation({
+    summary: 'Fazer login',
+    description:
+      'Autentica o usuário com email e senha. Retorna tokens de acesso e refresh.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', example: 'admin@funac.gov.br' },
+        password: { type: 'string', example: 'Admin123!@#' },
+      },
+      required: ['email', 'password'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Login realizado com sucesso',
+    schema: {
+      type: 'object',
+      properties: {
+        accessToken: { type: 'string' },
+        refreshToken: { type: 'string' },
+        user: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            email: { type: 'string' },
+            status: { type: 'string' },
+            mfaEnabled: { type: 'boolean' },
+            roles: { type: 'array', items: { type: 'string' } },
+            permissions: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Credenciais inválidas' })
+  @ApiResponse({ status: 429, description: 'Muitas tentativas de login' })
   login(@Request() req: AuthenticatedRequest) {
     // O LocalAuthGuard já processou o login
     return req.user;
@@ -64,6 +105,12 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Renovar tokens',
+    description: 'Renova o access token usando o refresh token',
+  })
+  @ApiResponse({ status: 200, description: 'Tokens renovados com sucesso' })
+  @ApiResponse({ status: 401, description: 'Refresh token inválido' })
   async refreshTokens(
     @Body() refreshDto: RefreshTokenDto,
     @Request() req: ExpressRequest,
