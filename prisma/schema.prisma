@@ -1,0 +1,187 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  emailVerified     Boolean            @default(false)
+  emailVerifiedAt   DateTime?
+  passwordHash      String
+  passwordUpdatedAt DateTime           @default(now())
+  status            UserStatus         @default(INVITED)
+  firstName         String?
+  lastName          String?
+  department        String?
+  
+  // MFA
+  mfaEnabled        Boolean            @default(false)
+  mfaSecret         String?
+  mfaRecoveryCodes  String[]
+  
+  // Metadados
+  createdBy         String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  lastLoginAt       DateTime?
+  
+  // Relacionamentos
+  roles             UserRole[]
+  permissions       UserPermission[]
+  sessions          Session[]
+  tokens            Token[]
+  auditLogs         AuditLog[]         @relation("AuditActor")
+  targetedAudits    AuditLog[]         @relation("AuditTarget")
+  createdUsers      User[]             @relation("UserCreator")
+  creator           User?              @relation("UserCreator", fields: [createdBy], references: [id])
+  
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  permissions RolePermission[]
+  users       UserRole[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  resource    String
+  action      String
+  description String?
+  roles       RolePermission[]
+  users       UserPermission[]
+  createdAt   DateTime         @default(now())
+  
+  @@map("permissions")
+}
+
+model UserRole {
+  id       String   @id @default(cuid())
+  userId   String
+  roleId   String
+  grantedBy String?
+  grantedAt DateTime @default(now())
+  expiresAt DateTime?
+  
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserPermission {
+  id           String     @id @default(cuid())
+  userId       String
+  permissionId String
+  grantedBy    String?
+  grantedAt    DateTime   @default(now())
+  expiresAt    DateTime?
+  
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, permissionId])
+  @@map("user_permissions")
+}
+
+model Session {
+  id                String    @id @default(cuid())
+  userId            String
+  refreshTokenHash  String    @unique
+  deviceFingerprint String?
+  ipAddress         String?
+  userAgent         String?
+  riskScore         Int       @default(0)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  lastUsedAt        DateTime  @default(now())
+  
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model Token {
+  id        String    @id @default(cuid())
+  userId    String?
+  type      TokenType
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  data      Json?     // Dados específicos do tipo de token
+  
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("tokens")
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String?
+  targetId   String?
+  result     AuditResult
+  reason     String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime    @default(now())
+  
+  actor      User?       @relation("AuditActor", fields: [actorId], references: [id])
+  target     User?       @relation("AuditTarget", fields: [targetId], references: [id])
+  
+  @@map("audit_logs")
+}
+
+enum UserStatus {
+  INVITED
+  PENDING_EMAIL_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  INVITATION
+  MFA_BACKUP
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+  PARTIAL
+}
