@@ -304,6 +304,60 @@ export class SessionService {
   }
 
   /**
+   * Obtém eventos de sessão do usuário para auditoria
+   */
+  async getUserSessionEvents(
+    userId: string,
+    limit: number = 50,
+  ): Promise<
+    Array<{
+      id: string;
+      action: string;
+      timestamp: Date;
+      ipAddress?: string;
+      userAgent?: string;
+      result: string;
+      reason?: string;
+    }>
+  > {
+    const events = await this.prisma.auditLog.findMany({
+      where: {
+        actorId: userId,
+        action: {
+          in: [
+            'LOGIN',
+            'LOGOUT',
+            'TOKEN_REFRESH',
+            'SESSION_REVOKED',
+            'MFA_VERIFIED',
+          ],
+        },
+      },
+      orderBy: {
+        timestamp: 'desc',
+      },
+      take: limit,
+      select: {
+        id: true,
+        action: true,
+        timestamp: true,
+        ipAddress: true,
+        userAgent: true,
+        result: true,
+        reason: true,
+      },
+    });
+
+    return events.map((event) => ({
+      ...event,
+      ipAddress: event.ipAddress || undefined,
+      userAgent: event.userAgent || undefined,
+      result: event.result.toString(),
+      reason: event.reason || undefined,
+    }));
+  }
+
+  /**
    * Gera token criptograficamente seguro
    */
   private generateSecureToken(): string {

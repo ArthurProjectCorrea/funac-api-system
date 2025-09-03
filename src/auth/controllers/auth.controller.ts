@@ -32,6 +32,7 @@ interface AuthenticatedRequest extends ExpressRequest {
     mfaEnabled: boolean;
     roles: string[];
     permissions: string[];
+    tokenId?: string; // JTI do token atual
   };
 }
 
@@ -127,8 +128,12 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@Body() logoutDto: LogoutDto) {
-    await this.authService.logout(logoutDto.refreshToken);
+  @UseGuards(JwtAuthGuard)
+  async logout(
+    @Body() logoutDto: LogoutDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    await this.authService.logout(logoutDto.refreshToken, req.user.tokenId);
     return { message: 'Logout realizado com sucesso' };
   }
 
@@ -137,7 +142,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async logoutAll(@Request() req: AuthenticatedRequest) {
     const userId = req.user.userId;
-    const revokedCount = await this.authService.logoutAll(userId);
+    const revokedCount = await this.authService.logoutAll(
+      userId,
+      undefined, // não temos sessionId no token JWT
+      req.user.tokenId,
+    );
 
     return {
       message: 'Logout de todos os dispositivos realizado com sucesso',

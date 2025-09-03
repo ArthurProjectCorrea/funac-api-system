@@ -1,12 +1,16 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { PasswordService } from '../../security/password.service';
 import { TokenService } from './token.service';
 import { SessionService } from './session.service';
 import { RiskAssessmentService, LoginAttempt } from './risk-assessment.service';
+import { DeviceManagementService } from './device-management.service';
+import { TokenBlacklistService } from './token-blacklist.service';
 import { AuditService } from '../../audit/audit.service';
+import { DeviceNotificationService } from '../../notifications/services/device-notification.service';
 import { UserStatus } from '@prisma/client';
 
 export interface UserWithRoles {
@@ -61,7 +65,10 @@ export class AuthService {
     private tokenService: TokenService,
     private sessionService: SessionService,
     private riskAssessmentService: RiskAssessmentService,
+    private deviceManagementService: DeviceManagementService,
+    private tokenBlacklistService: TokenBlacklistService,
     private auditService: AuditService,
+    private deviceNotificationService: DeviceNotificationService,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {
@@ -356,8 +363,21 @@ export class AuthService {
   /**
    * Realiza logout
    */
-  async logout(refreshToken: string): Promise<void> {
+  async logout(
+    refreshToken: string,
+    currentAccessTokenId?: string,
+  ): Promise<void> {
     await this.sessionService.revokeSessionByToken(refreshToken);
+
+    // Adicionar access token atual à blacklist se fornecido
+    if (currentAccessTokenId) {
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 15); // TTL do access token
+      await this.tokenBlacklistService.blacklistToken(
+        currentAccessTokenId,
+        expiresAt,
+      );
+    }
 
     // Log de auditoria será feito pelo interceptor
   }
@@ -365,7 +385,11 @@ export class AuthService {
   /**
    * Logout de todos os dispositivos
    */
-  async logoutAll(userId: string, currentSessionId?: string): Promise<number> {
+  async logoutAll(
+    userId: string,
+    currentSessionId?: string,
+    currentAccessTokenId?: string,
+  ): Promise<number> {
     let revokedCount: number;
 
     if (currentSessionId) {
@@ -375,6 +399,16 @@ export class AuthService {
       );
     } else {
       revokedCount = await this.sessionService.revokeAllUserSessions(userId);
+    }
+
+    // Adicionar access token atual à blacklist para invalidar imediatamente
+    if (currentAccessTokenId) {
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 15); // TTL do access token
+      await this.tokenBlacklistService.blacklistToken(
+        currentAccessTokenId,
+        expiresAt,
+      );
     }
 
     await this.auditService.logAuthEvent({
@@ -395,11 +429,18 @@ export class AuthService {
     _userAgent: string,
     riskScore: number,
   ): Promise<LoginResult> {
-    // Gerar device fingerprint
-    const deviceFingerprint = this.sessionService.generateDeviceFingerprint(
+    // Detectar novo dispositivo/localização
+    const deviceDetection = await this.deviceManagementService.detectNewDevice(
+      user.id,
       _userAgent,
       _ipAddress,
     );
+
+    // Atualizar score de risco baseado na detecção
+    const finalRiskScore = Math.max(riskScore, deviceDetection.riskScore);
+
+    // Gerar device fingerprint usando o serviço dedicado
+    const deviceFingerprint = deviceDetection.deviceInfo.fingerprint;
 
     // Criar sessão
     const refreshToken = await this.sessionService.createSession({
@@ -407,11 +448,42 @@ export class AuthService {
       deviceFingerprint,
       ipAddress: _ipAddress,
       userAgent: _userAgent,
-      riskScore,
+      riskScore: finalRiskScore,
     });
 
     // Gerar access token
     const accessToken = await this.generateAccessToken(user);
+
+    // Enviar notificação se necessário (não bloquear o login)
+    if (deviceDetection.shouldNotify) {
+      // Executar notificação de forma assíncrona
+      setImmediate(() => {
+        this.deviceNotificationService
+          .sendNewDeviceNotification({
+            userId: user.id,
+            userEmail: user.email,
+            deviceInfo: deviceDetection.deviceInfo,
+            loginTime: new Date(),
+            ipAddress: _ipAddress,
+            isNewDevice: deviceDetection.isNewDevice,
+            isNewLocation: deviceDetection.isNewLocation,
+            riskScore: finalRiskScore,
+          })
+          .catch((error) => {
+            // Log o erro mas não falhar o login
+            console.error(
+              'Erro ao enviar notificação de novo dispositivo:',
+              error,
+            );
+          });
+      });
+    }
+
+    // Atualizar último login do usuário
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
 
     return {
       accessToken,
@@ -429,8 +501,11 @@ export class AuthService {
    * Gera access token JWT
    */
   private async generateAccessToken(user: UserWithRoles): Promise<string> {
+    const tokenId = crypto.randomUUID(); // Gerar JTI único
+
     const payload = {
       sub: user.id,
+      jti: tokenId, // Token ID para blacklist
       email: user.email,
       status: user.status,
       roles: user.roles?.map((ur) => ur.role.name) || [],

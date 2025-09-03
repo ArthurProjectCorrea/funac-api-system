@@ -43,6 +43,12 @@ model User {
   createdUsers      User[]             @relation("UserCreator")
   creator           User?              @relation("UserCreator", fields: [createdBy], references: [id])
   
+  // Novos relacionamentos para Compliance e Governance
+  complianceRequests ComplianceRequest[]
+  accessReviews     AccessReview[]
+  reviewedAccess    AccessReview[]     @relation("ReviewedBy")
+  federatedUser     FederatedUser?
+  
   @@map("users")
 }
 
@@ -184,4 +190,108 @@ enum AuditResult {
   SUCCESS
   FAILURE
   PARTIAL
+}
+
+// Modelos para Compliance LGPD
+model ComplianceRequest {
+  id          String              @id @default(cuid())
+  userId      String
+  type        ComplianceRequestType
+  status      RequestStatus       @default(PENDING)
+  requestedAt DateTime            @default(now())
+  completedAt DateTime?
+  data        Json?
+  user        User                @relation(fields: [userId], references: [id])
+  
+  @@map("compliance_requests")
+}
+
+// Modelos para Access Review
+model AccessReview {
+  id          String       @id @default(cuid())
+  userId      String
+  reviewerId  String?
+  dueDate     DateTime
+  status      ReviewStatus @default(PENDING)
+  completedAt DateTime?
+  decision    Json?
+  user        User         @relation(fields: [userId], references: [id])
+  reviewer    User?        @relation("ReviewedBy", fields: [reviewerId], references: [id])
+  
+  @@map("access_reviews")
+}
+
+// Modelos para Security Incidents
+model SecurityIncident {
+  id          String         @id @default(cuid())
+  type        IncidentType
+  severity    IncidentSeverity
+  status      IncidentStatus @default(OPEN)
+  description String
+  metadata    Json
+  detectedAt  DateTime       @default(now())
+  resolvedAt  DateTime?
+  assignedTo  String?
+  
+  @@map("security_incidents")
+}
+
+// Modelos para Federação SSO
+model FederatedUser {
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  providerId   String
+  externalId   String
+  lastSyncAt   DateTime @default(now())
+  claims       Json
+  user         User    @relation(fields: [userId], references: [id])
+  
+  @@unique([providerId, externalId])
+  @@map("federated_users")
+}
+
+// Novos Enums
+enum ComplianceRequestType {
+  DATA_ACCESS
+  DATA_RECTIFICATION
+  DATA_DELETION
+  DATA_PORTABILITY
+  PROCESSING_OBJECTION
+}
+
+enum RequestStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  DENIED
+  ESCALATED
+}
+
+enum IncidentType {
+  UNAUTHORIZED_ACCESS
+  SUSPICIOUS_LOGIN
+  MFA_BYPASS_ATTEMPT
+  BRUTE_FORCE_ATTACK
+  PRIVILEGE_ESCALATION
+  DATA_BREACH
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  CLOSED
 }
