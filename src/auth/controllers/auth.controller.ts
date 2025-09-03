@@ -20,6 +20,7 @@ import {
   LogoutDto,
   PasswordResetDto,
   EmailVerifyDto,
+  ResendVerificationDto,
 } from '../dto/auth.dto';
 import { LocalAuthGuard, JwtAuthGuard } from '../guards/auth.guards';
 import { TokenType } from '@prisma/client';
@@ -156,9 +157,21 @@ export class AuthController {
 
   @Post('password/forgot')
   @HttpCode(HttpStatus.OK)
-  forgotPassword() {
-    // Implementar envio de email de reset
-    // Por enquanto, apenas retornar sucesso
+  @ApiOperation({
+    summary: 'Solicitar reset de senha',
+    description: 'Envia email com token para reset de senha',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', example: 'user@funac.gov.br' },
+      },
+      required: ['email'],
+    },
+  })
+  async forgotPassword(@Body() forgotDto: { email: string }) {
+    await this.authService.forgotPassword(forgotDto.email);
     return {
       message:
         'Se o email existir, você receberá instruções para redefinir sua senha',
@@ -167,6 +180,10 @@ export class AuthController {
 
   @Post('password/reset')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Redefinir senha',
+    description: 'Redefine a senha usando token válido',
+  })
   async resetPassword(@Body() resetDto: PasswordResetDto) {
     const tokenValidation = await this.tokenService.validateAndConsumeToken(
       resetDto.token,
@@ -177,12 +194,19 @@ export class AuthController {
       throw new UnauthorizedException('Token de reset inválido ou expirado');
     }
 
-    // Implementar reset de senha
+    await this.authService.resetPassword(
+      tokenValidation.userId,
+      resetDto.newPassword,
+    );
     return { message: 'Senha redefinida com sucesso' };
   }
 
   @Post('email/verify')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Verificar email',
+    description: 'Verifica o email usando token enviado',
+  })
   async verifyEmail(@Body() verifyDto: EmailVerifyDto) {
     const tokenValidation = await this.tokenService.validateAndConsumeToken(
       verifyDto.token,
@@ -195,14 +219,18 @@ export class AuthController {
       );
     }
 
-    // Implementar verificação de email
+    await this.authService.verifyEmail(tokenValidation.userId);
     return { message: 'Email verificado com sucesso' };
   }
 
   @Post('email/resend')
   @HttpCode(HttpStatus.OK)
-  resendVerification() {
-    // Implementar reenvio de verificação
+  @ApiOperation({
+    summary: 'Reenviar verificação de email',
+    description: 'Reenvia email de verificação',
+  })
+  async resendVerification(@Body() resendDto: ResendVerificationDto) {
+    await this.authService.resendEmailVerification(resendDto.email);
     return {
       message: 'Se o email existir, você receberá um novo link de verificação',
     };

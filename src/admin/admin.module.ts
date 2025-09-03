@@ -9,6 +9,7 @@ import { UsersModule } from '../users/users.module';
 import { RolesModule } from '../roles/roles.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { SessionsModule } from '../sessions/sessions.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SessionsModule } from '../sessions/sessions.module';
     RolesModule,
     PermissionsModule,
     SessionsModule,
+    NotificationModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

@@ -11,6 +11,7 @@ import { DeviceManagementService } from './device-management.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { AuditService } from '../../audit/audit.service';
 import { DeviceNotificationService } from '../../notifications/services/device-notification.service';
+import { EmailService } from '../../notifications/services/email.service';
 import { UserStatus } from '@prisma/client';
 
 export interface UserWithRoles {
@@ -69,6 +70,7 @@ export class AuthService {
     private tokenBlacklistService: TokenBlacklistService,
     private auditService: AuditService,
     private deviceNotificationService: DeviceNotificationService,
+    private emailService: EmailService,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {
@@ -601,5 +603,155 @@ export class AuthService {
    */
   private removeTempMfaSession(): void {
     // Implementar remoção do cache
+  }
+
+  /**
+   * Solicita reset de senha
+   */
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+
+    if (!user) {
+      // Por segurança, não revelar se o email existe
+      await this.auditService.logAuthEvent({
+        email,
+        action: 'PASSWORD_RESET_REQUESTED',
+        ipAddress: 'unknown',
+        userAgent: 'unknown',
+        reason: 'Email não encontrado',
+      });
+      return;
+    }
+
+    // Gerar token de reset
+    const resetToken = await this.tokenService.generatePasswordResetToken(
+      user.id,
+    );
+
+    // Enviar email com link de reset
+    await this.emailService.sendPasswordReset(user.email, resetToken);
+
+    await this.auditService.logAuthEvent({
+      userId: user.id,
+      email: user.email,
+      action: 'PASSWORD_RESET_REQUESTED',
+      ipAddress: 'unknown',
+      userAgent: 'unknown',
+      reason: 'Token de reset gerado',
+    });
+  }
+
+  /**
+   * Redefine a senha do usuário
+   */
+  async resetPassword(userId: string, newPassword: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+
+    // Validar política de senha
+    const passwordValidation =
+      this.passwordService.validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      throw new UnauthorizedException(passwordValidation.errors.join(', '));
+    }
+
+    // Hash da nova senha
+    const passwordHash = await this.passwordService.hashPassword(newPassword);
+
+    // Atualizar senha e invalidar todas as sessões
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        passwordUpdatedAt: new Date(),
+      },
+    });
+
+    // Revogar todas as sessões ativas
+    await this.sessionService.revokeAllUserSessions(userId);
+
+    await this.auditService.logAuthEvent({
+      userId: user.id,
+      email: user.email,
+      action: 'PASSWORD_RESET_COMPLETED',
+      ipAddress: 'unknown',
+      userAgent: 'unknown',
+      reason: 'Senha redefinida com sucesso',
+    });
+  }
+
+  /**
+   * Verifica o email do usuário
+   */
+  async verifyEmail(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+
+    // Atualizar status do usuário
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+        status:
+          user.status === UserStatus.PENDING_EMAIL_VERIFICATION
+            ? UserStatus.ACTIVE
+            : user.status,
+      },
+    });
+
+    await this.auditService.logAuthEvent({
+      userId: user.id,
+      email: user.email,
+      action: 'EMAIL_VERIFIED',
+      ipAddress: 'unknown',
+      userAgent: 'unknown',
+      reason: 'Email verificado com sucesso',
+    });
+  }
+
+  /**
+   * Reenvia email de verificação
+   */
+  async resendEmailVerification(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+
+    if (!user || user.emailVerified) {
+      // Por segurança, não revelar se o email existe ou já foi verificado
+      return;
+    }
+
+    // Gerar novo token de verificação
+    const verificationToken =
+      await this.tokenService.generateEmailVerificationToken(user.id);
+
+    // Enviar email de verificação
+    await this.emailService.sendEmailVerification(
+      user.email,
+      verificationToken,
+    );
+
+    await this.auditService.logAuthEvent({
+      userId: user.id,
+      email: user.email,
+      action: 'EMAIL_VERIFICATION_RESENT',
+      ipAddress: 'unknown',
+      userAgent: 'unknown',
+      reason: 'Novo token de verificação gerado',
+    });
   }
 }

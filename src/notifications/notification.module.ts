@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DeviceNotificationService } from './services/device-notification.service';
+import { EmailService } from './services/email.service';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({
@@ -27,7 +28,7 @@ import { DatabaseModule } from '../database/database.module';
       inject: [ConfigService],
     }),
   ],
-  providers: [DeviceNotificationService],
-  exports: [DeviceNotificationService],
+  providers: [DeviceNotificationService, EmailService],
+  exports: [DeviceNotificationService, EmailService],
 })
 export class NotificationModule {}

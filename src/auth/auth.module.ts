@@ -18,6 +18,7 @@ import { DeviceManagementService } from './services/device-management.service';
 // Controllers
 import { AuthController } from './controllers/auth.controller';
 import { SessionManagementController } from './controllers/session-management.controller';
+import { MfaController } from './controllers/mfa.controller';
 
 // Strategies
 import { LocalStrategy } from './strategies/local.strategy';
@@ -72,7 +73,7 @@ import { NotificationModule } from '../notifications/notification.module';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController, SessionManagementController],
+  controllers: [AuthController, SessionManagementController, MfaController],
   providers: [
     // Core Services
     AuthService,

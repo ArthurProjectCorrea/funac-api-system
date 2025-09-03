@@ -5,6 +5,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TokenService } from '../auth/services/token.service';
 import { PasswordService } from '../security/password.service';
+import { EmailService } from '../notifications/services/email.service';
 import { UserStatus, TokenType } from '@prisma/client';
 
 interface InviteUserData {
@@ -28,6 +29,7 @@ export class AdminService {
     private auditService: AuditService,
     private tokenService: TokenService,
     private passwordService: PasswordService,
+    private emailService: EmailService,
   ) {}
 
   async inviteUser(inviteData: InviteUserData, invitedBy: string) {
@@ -68,9 +70,20 @@ export class AdminService {
     }
 
     // Criar token de convite
-    await this.tokenService.createToken(user.id, TokenType.INVITATION, {
+    const inviteToken = await this.tokenService.createToken(
+      user.id,
+      TokenType.INVITATION,
+      {
+        tempPassword,
+      },
+    );
+
+    // Enviar email de convite
+    await this.emailService.sendUserInvitation(
+      user.email,
+      inviteToken,
       tempPassword,
-    });
+    );
 
     // Log de auditoria
     await this.auditService.log({
@@ -88,7 +101,6 @@ export class AdminService {
     return {
       message: 'Convite enviado com sucesso',
       userId: user.id,
-      tempPassword, // Em produção, enviar por email
     };
   }
 
