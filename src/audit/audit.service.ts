@@ -14,6 +14,16 @@ export interface CreateAuditLogDto {
   userAgent?: string;
 }
 
+export interface AuthEventDto {
+  userId?: string;
+  action: string;
+  email?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  reason?: string;
+  metadata?: any;
+}
+
 @Injectable()
 export class AuditService {
   constructor(private prisma: PrismaService) {}
@@ -106,5 +116,73 @@ export class AuditService {
         pages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Log authentication events
+   */
+  async logAuthEvent(data: AuthEventDto): Promise<void> {
+    const result = data.action.includes('SUCCESS')
+      ? AuditResult.SUCCESS
+      : AuditResult.FAILURE;
+
+    await this.log({
+      actorId: data.userId,
+      action: data.action,
+      targetType: 'User',
+      targetId: data.userId,
+      result,
+      reason: data.reason,
+      metadata: (data.metadata as Record<string, unknown>) || {},
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+  }
+
+  /**
+   * Log user management events
+   */
+  async logUserEvent(data: {
+    actorId: string;
+    action: string;
+    targetUserId: string;
+    targetUserEmail?: string;
+    reason?: string;
+    metadata?: any;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<void> {
+    await this.log({
+      actorId: data.actorId,
+      action: data.action,
+      targetType: 'User',
+      targetId: data.targetUserId,
+      result: AuditResult.SUCCESS,
+      reason: data.reason,
+      metadata: (data.metadata as Record<string, unknown>) || {},
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+  }
+
+  /**
+   * Log security events
+   */
+  async logSecurityEvent(data: {
+    action: string;
+    description: string;
+    severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    ipAddress?: string;
+    userAgent?: string;
+    metadata?: any;
+  }): Promise<void> {
+    await this.log({
+      action: data.action,
+      result: AuditResult.SUCCESS,
+      reason: data.description,
+      metadata: (data.metadata as Record<string, unknown>) || {},
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
   }
 }

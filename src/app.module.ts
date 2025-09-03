@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { SecurityModule } from './security/security.module';
 import { AuditModule } from './audit/audit.module';
+import { AuthModule } from './auth/auth.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -23,6 +24,7 @@ import configuration from './config/configuration';
     DatabaseModule,
     SecurityModule,
     AuditModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
